@@ -3,46 +3,50 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// 👇 AQUÍ PEGAS TUS CLAVES DE SUPABASE (Las que copiaste de la web) 👇
-const supabaseUrl = 'https://mbftmjustcrqotwyxvqa.supabase.co'; // <-- Ejemplo: https://xyz.supabase.co
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZnRtanVzdGNycW90d3l4dnFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDQ4NzksImV4cCI6MjA4MDAyMDg3OX0.LNYgBJMaTioOq2ks7SGiR6Gi2cGod22TJkg7bOQ2fR8'; // <-- Ejemplo: eyJhbGciOiJIUzI1NiIsInR5cCI...
+// 👇 TUS CLAVES DE SUPABASE AQUÍ (NO LAS OLVIDES) 👇
+const supabaseUrl = 'https://mbftmjustcrqotwyxvqa.supabase.co'; 
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZnRtanVzdGNycW90d3l4dnFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDQ4NzksImV4cCI6MjA4MDAyMDg3OX0.LNYgBJMaTioOq2ks7SGiR6Gi2cGod22TJkg7bOQ2fR8'; 
 
-// Creamos la conexión con la nube
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function Home() {
   const [saldo, setSaldo] = useState(0); 
-  const [mensaje, setMensaje] = useState("");
   const [cargandoDatos, setCargandoDatos] = useState(true);
   
-  // Estados para la cámara y pagos
+  // Estados de interacción
   const [destinatario, setDestinatario] = useState("");
   const [montoAPagar, setMontoAPagar] = useState(0);
-  const [escaneando, setEscaneando] = useState(false);
+  const [vistaEscaneo, setVistaEscaneo] = useState(false);
+  const [mensaje, setMensaje] = useState<{texto: string, tipo: 'exito' | 'error'} | null>(null);
 
-  // 1. CARGAR DATOS DE LA NUBE (AL INICIO)
+  // 1. LÓGICA DE SUPABASE (MEJORADA Y AUTO-REPARABLE)
   useEffect(() => {
     const obtenerSaldo = async () => {
-      // Pedimos el saldo del usuario con ID 1 (Tu usuario de prueba)
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('saldo')
-        .eq('id', 1)
-        .single();
-
+      // Intentamos buscar al usuario 1
+      const { data, error } = await supabase.from('usuarios').select('saldo').eq('id', 1).single();
+      
       if (data) {
+        // Si existe, usamos su saldo real
         setSaldo(data.saldo);
       } else {
-        // Si no hay usuario 1, asumimos 150 para que se vea algo
-        setSaldo(150); 
+        // 🚨 AUTO-FIX: Si no existe, lo CREAMOS automáticamente
+        console.log("Usuario no encontrado. Creando uno nuevo...");
+        const { error: errorInsert } = await supabase
+            .from('usuarios')
+            .insert([{ id: 1, saldo: 150 }]); // Saldo inicial real
+        
+        if (!errorInsert) {
+            setSaldo(150); // Si se creó bien, mostramos 150
+        } else {
+            console.error("Error creando usuario:", errorInsert);
+        }
       }
       setCargandoDatos(false);
     };
 
     obtenerSaldo();
 
-    // ⚡ MAGIA: SUSCRIPCIÓN EN TIEMPO REAL
-    // Esto hace que si pagas en el celular, la PC se actualice sola
+    // Suscripción en tiempo real
     const canal = supabase
       .channel('cambios-saldo')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'usuarios' }, (payload) => {
@@ -51,115 +55,185 @@ export default function Home() {
       .subscribe();
 
     return () => { supabase.removeChannel(canal); };
-
   }, []);
 
-  // 2. FUNCIÓN PARA PAGAR (ENVIAR A LA NUBE)
-  const pagar = async () => {
-    if (montoAPagar === 0) {
-        setMensaje("⚠️ Primero escanea un QR");
-        return;
-    }
-    
+  // 2. LÓGICA DE PAGO
+  const procesarPago = async () => {
     if (saldo >= montoAPagar) {
       const nuevoSaldo = saldo - montoAPagar;
+      setSaldo(nuevoSaldo); // Actualización visual inmediata
       
-      // Actualizamos visualmente rápido (para que se sienta veloz)
-      setSaldo(nuevoSaldo);
-      setMensaje(`¡Pago exitoso! - S/ ${montoAPagar.toFixed(2)}`);
+      // Feedback visual
+      setVistaEscaneo(false);
+      setMensaje({ texto: `¡Envío exitoso a ${destinatario}!`, tipo: 'exito' });
+      
+      // Guardar en la nube
+      await supabase.from('usuarios').update({ saldo: nuevoSaldo }).eq('id', 1);
+      
+      // Reset
       setMontoAPagar(0);
       setDestinatario("");
-
-      // Guardamos el nuevo saldo en la base de datos real
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ saldo: nuevoSaldo })
-        .eq('id', 1);
-
-      if (error) console.error("Error al guardar en Supabase:", error);
-
     } else {
-      setMensaje("❌ Saldo insuficiente");
+      setMensaje({ texto: "Saldo insuficiente 😢", tipo: 'error' });
     }
-    setTimeout(() => setMensaje(""), 3000);
+    setTimeout(() => setMensaje(null), 4000);
   };
 
-  // Simulación de IA (Para impresionar en la demo)
-  const simularEscaneoIA = () => {
-    setEscaneando(true);
-    setMensaje("🤖 La IA está analizando el QR...");
-
+  const simularIA = () => {
+    // Simulamos que la IA piensa un poco
     setTimeout(() => {
-        setDestinatario("Bodega 'El Chato'");
-        setMontoAPagar(10.00); 
-        setMensaje("✅ ¡QR detectado con éxito!");
-        setEscaneando(false);
+      setDestinatario("Bodega 'Don Lucho'");
+      setMontoAPagar(12.50);
     }, 2000);
   };
 
+  // PANTALLA DE CARGA
   if (cargandoDatos) return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white font-bold text-xl gap-4">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-      Conectando con el Banco... 🏦
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center text-purple-500 gap-4">
+      <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+      <p className="animate-pulse font-bold">Sincronizando Billetera...</p>
     </div>
   );
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-950 p-4 font-sans">
-      <div className="w-full max-w-sm bg-purple-900 rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 relative">
+    <div className="min-h-screen bg-gray-950 text-white font-sans flex justify-center items-center p-4">
+      
+      {/* 📱 CONTENEDOR TIPO MÓVIL */}
+      <div className="w-full max-w-sm h-[800px] bg-black rounded-[40px] border-8 border-gray-900 overflow-hidden relative shadow-2xl flex flex-col">
         
-        {/* Header */}
-        <div className="bg-purple-800 p-6 text-center">
-          <h2 className="text-white font-bold text-2xl tracking-wider">ChambaPay Cloud ☁️</h2>
-          <p className="text-purple-200 text-xs mt-1">Conectado a Supabase</p>
+        {/* --- HEADER --- */}
+        <div className="pt-12 px-6 flex justify-between items-center bg-gradient-to-b from-gray-900 to-black">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-bold">Yo</div>
+            <div>
+              <p className="text-xs text-gray-400">Hola, Campeón 👋</p>
+              <h3 className="font-bold text-sm">ChambaPay</h3>
+            </div>
+          </div>
+          <button className="p-2 bg-gray-800 rounded-full hover:bg-gray-700 transition">
+             🔔
+          </button>
         </div>
 
-        {/* Cuerpo */}
-        <div className="bg-white h-[450px] p-6 flex flex-col items-center pt-8 rounded-t-3xl mt-[-20px]">
-          <p className="text-gray-500 text-sm font-medium tracking-widest">SALDO GLOBAL</p>
-          <h1 className="text-5xl font-bold text-gray-800 mt-1 mb-6 animate-pulse transition-all">
-            S/ {saldo.toFixed(2)}
-          </h1>
-
-          {/* ZONA DE ESCANEO */}
-          <div className="w-full bg-purple-50 p-4 rounded-xl mb-4 border-2 border-dashed border-purple-300 flex flex-col items-center min-h-[140px] justify-center transition-all">
-            {escaneando ? (
-                <div className="animate-pulse flex flex-col items-center text-purple-600">
-                    <svg className="w-10 h-10 mb-2 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"></path></svg>
-                    <span className="font-bold text-sm">Analizando imagen...</span>
-                </div>
-            ) : destinatario ? (
-                <div className="text-center w-full animate-bounce">
-                    <p className="text-xs text-gray-500 mb-1">Pagar a:</p>
-                    <h3 className="text-xl font-bold text-purple-800">{destinatario}</h3>
-                    <h2 className="text-3xl font-black text-gray-900 mt-2">S/ {montoAPagar.toFixed(2)}</h2>
-                </div>
-            ) : (
-                <button onClick={simularEscaneoIA} className="flex flex-col items-center text-purple-500 hover:text-purple-700 group">
-                    <svg className="w-12 h-12 mb-2 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    <span className="font-medium">Escanear</span>
-                </button>
-            )}
+        {/* --- CUERPO PRINCIPAL --- */}
+        <div className="flex-1 px-6 pt-6 overflow-y-auto pb-20">
+          
+          {/* TARJETA DE CRÉDITO VIRTUAL */}
+          <div className="w-full aspect-video bg-gradient-to-br from-purple-600 to-indigo-900 rounded-2xl p-6 relative shadow-lg transform transition hover:scale-105 duration-300 group">
+            <div className="absolute top-0 right-0 p-4 opacity-50">
+              <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            </div>
+            <p className="text-purple-200 text-sm font-medium mb-1">Saldo Total</p>
+            <h2 className="text-4xl font-bold tracking-tight">S/ {saldo.toFixed(2)}</h2>
+            <div className="mt-8 flex justify-between items-end">
+              <p className="font-mono text-purple-200 text-sm tracking-widest">**** 4280</p>
+              <p className="text-xs font-bold bg-white/20 px-2 py-1 rounded">VISA</p>
+            </div>
           </div>
 
-          <button 
-            onClick={pagar}
-            disabled={montoAPagar === 0 || escaneando}
-            className={`w-full text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all transform active:scale-95
-                ${montoAPagar > 0 ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-200' : 'bg-gray-300 cursor-not-allowed'}
-            `}
-          >
-            Pagar Globalmente
-          </button>
-          
-          {mensaje && <p className={`mt-4 font-bold text-center text-sm ${mensaje.includes('insuficiente') ? 'text-red-500' : 'text-green-600'}`}>{mensaje}</p>}
+          {/* ACCIONES RÁPIDAS */}
+          <div className="grid grid-cols-4 gap-4 mt-8">
+            <BotonAccion icono="📷" texto="Escanear" onClick={() => { setVistaEscaneo(true); simularIA(); }} principal />
+            <BotonAccion icono="💸" texto="Transferir" />
+            <BotonAccion icono="📅" texto="Servicios" />
+            <BotonAccion icono="history" texto="Historial" />
+          </div>
 
+          {/* LISTA DE MOVIMIENTOS (VISUAL) */}
+          <div className="mt-8">
+            <h3 className="text-lg font-bold mb-4">Últimos Movimientos</h3>
+            <div className="space-y-4">
+              <Movimiento nombre="Netflix" fecha="Hoy, 10:00 AM" monto="- S/ 45.00" icono="🎬" />
+              <Movimiento nombre="Yape Recibido" fecha="Ayer, 8:30 PM" monto="+ S/ 120.00" positivo icono="📲" />
+              <Movimiento nombre="Uber Trip" fecha="Ayer, 6:15 PM" monto="- S/ 18.50" icono="🚗" />
+            </div>
+          </div>
         </div>
+
+        {/* --- BARRA INFERIOR --- */}
+        <div className="absolute bottom-0 w-full bg-gray-900/90 backdrop-blur-md border-t border-gray-800 p-4 flex justify-around text-xs text-gray-400">
+           <div className="text-purple-400 flex flex-col items-center">🏠<span className="mt-1">Inicio</span></div>
+           <div className="flex flex-col items-center">💳<span className="mt-1">Tarjeta</span></div>
+           <div className="flex flex-col items-center">⚙️<span className="mt-1">Ajustes</span></div>
+        </div>
+
+        {/* --- MODAL DE ESCANEO (CÁMARA FALSA) --- */}
+        {vistaEscaneo && (
+          <div className="absolute inset-0 bg-black z-50 flex flex-col items-center justify-center p-6 animate-fade-in">
+             <div className="w-full h-full border-2 border-gray-800 rounded-3xl relative overflow-hidden bg-gray-900">
+                
+                {/* Overlay de cámara */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    {!destinatario ? (
+                        <div className="w-64 h-64 border-2 border-purple-500 rounded-xl relative animate-pulse flex items-center justify-center">
+                            <p className="text-purple-300 text-sm font-bold bg-black/50 px-2 py-1 rounded">Buscando QR...</p>
+                            {/* Esquinas del scanner */}
+                            <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-purple-500 -mt-1 -ml-1"></div>
+                            <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-purple-500 -mt-1 -mr-1"></div>
+                            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-purple-500 -mb-1 -ml-1"></div>
+                            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-purple-500 -mb-1 -mr-1"></div>
+                        </div>
+                    ) : (
+                        <div className="bg-gray-800 p-6 rounded-2xl w-full max-w-xs text-center border border-gray-700 animate-slide-up">
+                            <div className="w-16 h-16 bg-purple-600 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl">🏪</div>
+                            <h3 className="text-xl font-bold text-white">{destinatario}</h3>
+                            <p className="text-gray-400 text-sm mb-6">Monto a pagar</p>
+                            <h2 className="text-4xl font-bold text-white mb-6">S/ {montoAPagar.toFixed(2)}</h2>
+                            
+                            <button onClick={procesarPago} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-purple-900/50 transition">
+                                Confirmar Pago
+                            </button>
+                            <button onClick={() => {setVistaEscaneo(false); setDestinatario(""); setMontoAPagar(0);}} className="mt-4 text-gray-400 text-sm hover:text-white">
+                                Cancelar
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Botón Cerrar (X) */}
+                {!destinatario && (
+                    <button onClick={() => setVistaEscaneo(false)} className="absolute top-6 right-6 text-white bg-black/50 w-10 h-10 rounded-full">✕</button>
+                )}
+             </div>
+          </div>
+        )}
+
+        {/* --- TOAST DE NOTIFICACIÓN --- */}
+        {mensaje && (
+          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-bounce z-50 ${mensaje.tipo === 'exito' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+             <span>{mensaje.tipo === 'exito' ? '✅' : '❌'}</span>
+             <span className="font-bold text-sm">{mensaje.texto}</span>
+          </div>
+        )}
+
       </div>
-      
-      <p className="mt-8 text-gray-600 text-xs text-center max-w-xs">
-        Hackathon Pro Tip: Usa Supabase Realtime para sincronizar todos los dispositivos al instante.
-      </p>
     </div>
   );
+}
+
+// --- COMPONENTES UI PEQUEÑOS ---
+function BotonAccion({ icono, texto, onClick, principal = false }: any) {
+    return (
+        <button onClick={onClick} className="flex flex-col items-center gap-2 group">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg transition transform group-hover:scale-110 ${principal ? 'bg-white text-black' : 'bg-gray-800 text-white'}`}>
+                {icono}
+            </div>
+            <span className="text-xs font-medium text-gray-400 group-hover:text-white">{texto}</span>
+        </button>
+    )
+}
+
+function Movimiento({ nombre, fecha, monto, icono, positivo = false }: any) {
+    return (
+        <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-xl hover:bg-gray-800 transition cursor-pointer">
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center text-lg">{icono}</div>
+                <div>
+                    <h4 className="font-bold text-sm">{nombre}</h4>
+                    <p className="text-xs text-gray-500">{fecha}</p>
+                </div>
+            </div>
+            <span className={`font-bold text-sm ${positivo ? 'text-green-400' : 'text-white'}`}>{monto}</span>
+        </div>
+    )
 }
