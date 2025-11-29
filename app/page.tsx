@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // 👇 TUS CLAVES AQUÍ 👇
-const supabaseUrl = 'PEGA_AQUI_LA_URL_DEL_PROYECTO'; 
-const supabaseKey = 'PEGA_AQUI_LA_PUBLISHABLE_KEY'; 
+const supabaseUrl = 'https://mbftmjustcrqotwyxvqa.supabase.co'; 
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZnRtanVzdGNycW90d3l4dnFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDQ4NzksImV4cCI6MjA4MDAyMDg3OX0.LNYgBJMaTioOq2ks7SGiR6Gi2cGod22TJkg7bOQ2fR8'; 
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
