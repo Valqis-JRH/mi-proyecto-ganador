@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// 👇 TUS CLAVES AQUÍ 👇
+// 👇 TUS CLAVES (Ya están puestas) 👇
 const supabaseUrl = 'https://mbftmjustcrqotwyxvqa.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZnRtanVzdGNycW90d3l4dnFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDQ4NzksImV4cCI6MjA4MDAyMDg3OX0.LNYgBJMaTioOq2ks7SGiR6Gi2cGod22TJkg7bOQ2fR8'; 
 
@@ -20,7 +20,6 @@ export default function Home() {
   const [mensaje, setMensaje] = useState<{texto: string, tipo: 'exito' | 'error'} | null>(null);
 
   // --- FUNCIÓN PARA LEER EL SALDO REAL DE LA NUBE ---
-  // La sacamos fuera del useEffect para poder usarla cuando queramos
   const refrescarSaldo = useCallback(async () => {
     try {
         const { data, error } = await supabase
@@ -42,11 +41,10 @@ export default function Home() {
     setCargandoDatos(false);
   }, []);
 
-  // 1. CARGA INICIAL Y SUSCRIPCIÓN (AUTOMÁTICA)
+  // 1. CARGA INICIAL Y SUSCRIPCIÓN
   useEffect(() => {
-    refrescarSaldo(); // Carga inicial
+    refrescarSaldo(); 
 
-    // Suscripción en tiempo real (Plan A)
     const canal = supabase
       .channel('cambios-saldo')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'usuarios' }, (payload) => {
@@ -58,24 +56,18 @@ export default function Home() {
     return () => { supabase.removeChannel(canal); };
   }, [refrescarSaldo]);
 
-  // 2. LÓGICA DE PAGO (CON ACTUALIZACIÓN FORZADA)
+  // 2. LÓGICA DE PAGO
   const procesarPago = async () => {
     if (saldo >= montoAPagar) {
       const nuevoSaldo = saldo - montoAPagar;
       
-      // 1. Optimistic UI (Actualizamos visualmente ya mismo para que se sienta rápido)
       setSaldo(nuevoSaldo);
       setVistaEscaneo(false);
       setMensaje({ texto: `¡Envío exitoso a ${destinatario}!`, tipo: 'exito' });
       
-      // 2. Guardamos en la nube
       await supabase.from('usuarios').update({ saldo: nuevoSaldo }).eq('id', 1);
+      await refrescarSaldo(); // Doble verificación
       
-      // 3. 🛡️ PLAN B: FORZAMOS UNA RECARGA DE DATOS REALES
-      // Esto asegura que si o si tengas el dato correcto de la base de datos
-      await refrescarSaldo();
-      
-      // Reset
       setMontoAPagar(0);
       setDestinatario("");
     } else {
@@ -91,7 +83,6 @@ export default function Home() {
     }, 2000);
   };
 
-  // PANTALLA DE CARGA
   if (cargandoDatos) return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center text-purple-500 gap-4">
       <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
@@ -114,8 +105,18 @@ export default function Home() {
               <h3 className="font-bold text-sm">ChambaPay</h3>
             </div>
           </div>
-          {/* Botón WhatsApp de Soporte */}
-          <a href="https://wa.me/51999999999?text=Ayuda%20saldo" target="_blank" className="p-2 bg-gray-800 rounded-full hover:bg-green-600 transition flex items-center justify-center text-white no-underline text-lg">📞</a>
+          
+          {/* 🔥 BOTÓN WHATSAPP DINÁMICO (LA MAGIA ESTÁ AQUÍ) */}
+          {/* Fíjate cómo inyectamos la variable ${saldo} dentro del enlace */}
+          <a 
+            href={`https://wa.me/51999999999?text=Hola%20soporte,%20tengo%20una%20duda%20sobre%20mi%20saldo%20actual%20de%20S/%20${saldo.toFixed(2)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 bg-gray-800 rounded-full hover:bg-green-600 transition flex items-center justify-center text-white no-underline text-xl animate-pulse"
+          >
+            📞
+          </a>
+
         </div>
 
         {/* --- CUERPO PRINCIPAL --- */}
@@ -127,7 +128,6 @@ export default function Home() {
               <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
             </div>
             <p className="text-purple-200 text-sm font-medium mb-1">Saldo Total</p>
-            {/* El saldo ahora se actualiza forzosamente */}
             <h2 className="text-4xl font-bold tracking-tight">S/ {saldo.toFixed(2)}</h2>
             <div className="mt-8 flex justify-between items-end">
               <p className="font-mono text-purple-200 text-sm tracking-widest">**** 4280</p>
@@ -143,7 +143,7 @@ export default function Home() {
             <BotonAccion icono="history" texto="Historial" />
           </div>
 
-          {/* LISTA DE MOVIMIENTOS (VISUAL) */}
+          {/* LISTA DE MOVIMIENTOS */}
           <div className="mt-8">
             <h3 className="text-lg font-bold mb-4">Últimos Movimientos</h3>
             <div className="space-y-4">
@@ -203,6 +203,7 @@ export default function Home() {
   );
 }
 
+// COMPONENTES AUXILIARES
 function BotonAccion({ icono, texto, onClick, principal = false }: any) {
     return (
         <button onClick={onClick} className="flex flex-col items-center gap-2 group">
